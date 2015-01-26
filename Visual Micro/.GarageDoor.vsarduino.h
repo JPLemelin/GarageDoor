@@ -39,6 +39,11 @@
 typedef unsigned char byte;
 extern "C" void __cxa_pure_virtual() {;}
 
+void onButtonA();
+void onButtonB();
+void onButtonC();
+void onButtonD();
+void updateButton();
 //
 //
 
