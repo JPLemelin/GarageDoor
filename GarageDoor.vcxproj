@@ -71,13 +71,11 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Analog5Buttons.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="Eeprom.h" />
     <ClInclude Include="Visual Micro\.GarageDoor.vsarduino.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Analog5Buttons.cpp" />
     <ClCompile Include="Eeprom.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -20,7 +20,12 @@
 //       IN3           D3
 //       IN4           D2
 //       5V            5V
-
+//
+//
+//    Buttons
+//      D8  <--> SWITCH CLOSE <--> GND 
+//      D9  <--> SWITCH OPEN  <--> GND 
+//
 
 
 #define R1 5
@@ -29,6 +34,11 @@
 #define R4 2
 
 // digitalWrite(R1, LOW);
+
+#define LED          13
+
+#define BUTTON_OPEN  9
+#define BUTTON_CLOSE 8
 
 
 class ButtonRC
@@ -44,7 +54,6 @@ public:
 
     bool update()
     {
-        //bool raw_state = analogRead(pin_) > 512 ? LOW : HIGH;
         bool raw_state = analogRead(pin_) > 512;
 
         if(raw_state)
@@ -101,12 +110,84 @@ private:
 
 };
 
+
+class ButtonDigital
+{
+public:
+    ButtonDigital(uint8_t pin)
+        : pin_(pin)
+        , state_(false)
+        , last_state_(true)
+    {
+        last_state_ = !digitalRead(pin_);
+    }
+
+    bool update()
+    {
+        bool raw_state = !digitalRead(pin_);
+
+        if(raw_state)
+        {
+            // Detect rising edges
+            if(!last_state_)
+            {
+                last_state_ = true;
+                last_edge_time_ = millis();
+            }
+
+            if(!state_)
+            {
+                // Debouncing complete ?
+                if(last_edge_time_ + DEBOUNCE_COUNT_UP__ <= millis())
+                {
+                    state_ = true;
+                } 
+            }
+        }
+        else
+        {
+            // Detect failling edges
+            if(last_state_)
+            {
+                last_state_ = false;
+                last_edge_time_ = millis();
+            }
+
+            if(state_)
+            {
+                // Debouncing complete ?
+                if(last_edge_time_ + DEBOUNCE_COUNT_DOWN__ <= millis())
+                {
+                    state_ = false;
+                } 
+            }
+        }
+
+        return state_;
+    }
+
+private:
+    enum Config
+    {
+        DEBOUNCE_COUNT_UP__ = 50,     // number of millis to consider it as up
+        DEBOUNCE_COUNT_DOWN__ = 50,  // number of millis to consider it as down
+    };
+
+    uint8_t pin_;
+    bool last_state_;
+    bool state_;
+    unsigned long last_edge_time_;
+
+};
+
+
 class Door
 {
 private:
     enum Config
     {
-        TIME_TO_OPEN__  = 5000,        // In ms
+        TIME_TO_OPEN__  = 43000,        // In ms
+        MIN_TIME_MOTOR_REVERSE = 500, // IN Ms
         //TIME_TO_CLOSE__ = 60000,        // In ms
         RELAY_ACTIVATION_TIME__ = 50,   // Relay activation in ms  normaly it's around ~75ms
     };
@@ -182,6 +263,10 @@ public:
         {
             setState(eOPEN_REQUESTED);
         }
+        else if (state_ == eOPENING )
+        {
+            setState(eSTOP_REQUESTED);
+        }
     }
 
     void close()
@@ -189,6 +274,10 @@ public:
         if (state_ != eCLOSING && state_ != eCLOSED)
         {
             setState(eCLOSE_REQUESTED);
+        }
+        else if (state_ == eCLOSING )
+        {
+            setState(eSTOP_REQUESTED);
         }
     }
 
@@ -215,7 +304,11 @@ private:
             if (new_state != eOPENED && end_target_timestamp_ > millis() )
             {
                 // Open was not reach
-                door_steps_ +=  millis() - state_timestamp_;
+                int delta =  millis() - state_timestamp_;
+                if (delta > RELAY_ACTIVATION_TIME__)
+                {
+                    door_steps_ += delta - RELAY_ACTIVATION_TIME__;
+                }
             }
         }
         else if (state_ == eCLOSING)
@@ -224,7 +317,11 @@ private:
             if (new_state != eCLOSED  && end_target_timestamp_ > millis())
             {
                 // Close was not reach
-                door_steps_ -=  millis() - state_timestamp_;
+                int delta =  millis() - state_timestamp_;
+                if (delta > RELAY_ACTIVATION_TIME__)
+                {
+                    door_steps_ -= delta - RELAY_ACTIVATION_TIME__;
+                }
             }
         }
 
@@ -242,22 +339,32 @@ private:
         //
         if (state_ == eOPEN_REQUESTED)
         {
-            digitalWrite(pin_out_open_, LOW);
-            end_target_timestamp_ = state_timestamp_ + RELAY_ACTIVATION_TIME__;
+            end_target_timestamp_ = state_timestamp_;
+            if (last_state == eCLOSING)
+            {
+                end_target_timestamp_ += MIN_TIME_MOTOR_REVERSE;
+            }
         }
         else if (state_ == eCLOSE_REQUESTED)
         {
-            digitalWrite(pin_out_close_, LOW);
-            end_target_timestamp_ = state_timestamp_ + RELAY_ACTIVATION_TIME__;
+            end_target_timestamp_ = state_timestamp_;
+            if (last_state == eOPENING)
+            {
+                end_target_timestamp_ += MIN_TIME_MOTOR_REVERSE;
+            }
         }
         else if (state_ == eOPENING)
         {
+            digitalWrite(pin_out_open_, LOW);
             end_target_timestamp_ = state_timestamp_;
+            end_target_timestamp_ += RELAY_ACTIVATION_TIME__;
             end_target_timestamp_ += TIME_TO_OPEN__  - door_steps_;
         }
         else if (state_ == eCLOSING)
         {
+            digitalWrite(pin_out_close_, LOW);
             end_target_timestamp_ = state_timestamp_;
+            end_target_timestamp_ += RELAY_ACTIVATION_TIME__;
             end_target_timestamp_ +=  door_steps_;
         }
         else if (state_ == eOPENED)
@@ -309,6 +416,10 @@ ButtonRC button_a(A2);
 ButtonRC button_b(A0);
 ButtonRC button_c(A3);
 ButtonRC button_d(A1);
+
+ButtonDigital button_open(BUTTON_OPEN);
+ButtonDigital button_close(BUTTON_CLOSE);
+
 Door door(R1, R2);
 
 
@@ -333,6 +444,18 @@ void onButtonD()
 {
     log_logmsln("onButtonD");
     door.stop();
+}
+
+void onButtonOpen()
+{
+    log_logmsln("onButtonOpen");
+    door.open();
+}
+
+void onButtonClose()
+{
+    log_logmsln("onButtonClose");
+    door.close();
 }
 
 void updateButton()
@@ -384,6 +507,32 @@ void updateButton()
         last_d = d;
     }
 
+    // Digital
+    static bool last_open = false;
+    static bool last_close = false;
+    
+    // Read new state of rc button
+    bool open =  button_open.update();
+    bool close =  button_close.update();
+
+    if (last_open != open)
+    {
+        if (open)
+        {
+            onButtonOpen();
+        }
+        last_open = open;
+    }
+
+    if (last_close !=  close)
+    {
+        if (close)
+        {
+            onButtonClose();
+        }
+        last_close = close;
+    }
+
 }
 
 
@@ -399,6 +548,9 @@ void setup()
     pinMode(R2, OUTPUT);
     pinMode(R3, OUTPUT);
     pinMode(R4, OUTPUT);
+
+    pinMode(BUTTON_OPEN, INPUT_PULLUP);
+    pinMode(BUTTON_CLOSE, INPUT_PULLUP);
 
     digitalWrite(R1, HIGH);     
     digitalWrite(R2, HIGH);     

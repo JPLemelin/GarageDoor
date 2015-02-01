@@ -43,6 +43,8 @@ void onButtonA();
 void onButtonB();
 void onButtonC();
 void onButtonD();
+void onButtonOpen();
+void onButtonClose();
 void updateButton();
 //
 //
